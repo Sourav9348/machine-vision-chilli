@@ -1,5 +1,6 @@
 import io
 import time
+import os
 from pathlib import Path
 
 import cv2
@@ -21,15 +22,15 @@ def inference(model=None):
 
   # Main title of streamlit application
   main_title_cfg = """<div><h1 style="color:#FF64DA; text-align:center; font-size:40px; 
-                           font-family: 'Archivo', sans-serif; margin-top:-50px;margin-bottom:20px;">
-                  YOLO_Chilli Web Application
-                  </h1></div>"""
+                             font-family: 'Archivo', sans-serif; margin-top:-50px;margin-bottom:20px;">
+                    YOLO_Chilli Web Application
+                    </h1></div>"""
 
   # Subtitle of streamlit application
   sub_title_cfg = """<div><h4 style="color:#042AFF; text-align:center; 
-                  font-family: 'Archivo', sans-serif; margin-top:-15px; margin-bottom:50px;">
-                  Experience real-time chilli detection on your webcam or with video input. 🚀</h4>
-                  </div>"""
+                    font-family: 'Archivo', sans-serif; margin-top:-15px; margin-bottom:50px;">
+                    Experience real-time chilli leaf disease detection on your webcam or with video input. 🚀</h4>
+                    </div>"""
 
   # Set html page configuration
   st.set_page_config(page_title="IIT-KGP-AGFE", layout="wide", initial_sidebar_state="auto")
@@ -49,24 +50,33 @@ def inference(model=None):
 
   # Add video source selection dropdown
   source = st.sidebar.selectbox(
-      "Video",
-      ("webcam", "video"),
+      "Video Source",
+      ("webcam", "upload video", "choose from folder"),
   )
 
   vid_file_name = ""
-  if source == "video":
+  if source == "upload video":
+      # Allow user to upload a video file
       vid_file = st.sidebar.file_uploader("Upload Video File", type=["mp4", "mov", "avi", "mkv"])
       if vid_file is not None:
           g = io.BytesIO(vid_file.read())  # BytesIO Object
-          vid_location = "ultralytics.mp4"
+          vid_location = "uploaded_video.mp4"
           with open(vid_location, "wb") as out:  # Open temporary file as bytes
               out.write(g.read())  # Read bytes into file
-          vid_file_name = "ultralytics.mp4"
+          vid_file_name = vid_location
+  elif source == "choose from folder":
+      # Specify the folder containing videos
+      video_folder = "test_videos"  # Change this to your video folder path
+      video_files = [f for f in os.listdir(video_folder) if f.endswith(('.mp4', '.mov', '.avi', '.mkv'))]
+
+      # Dropdown for selecting video file
+      selected_video = st.sidebar.selectbox("Select Video File", video_files)
+      if selected_video:
+          vid_file_name = os.path.join(video_folder, selected_video)  # Full path to the selected video
   elif source == "webcam":
       vid_file_name = 0
 
   # Add dropdown menu for model selection
-  # Load models from the 'models' directory
   model_dir = Path('models')
   model_dir.mkdir(exist_ok=True)  # Create the models directory if it doesn't exist
 
@@ -92,8 +102,6 @@ def inference(model=None):
   with st.spinner("Loading model..."):
       model_path = model_dir / (selected_model + '.pt')
       if not model_path.exists():
-          # Attempt to download the model if it does not exist locally
-          # You can implement code to download from a custom source
           st.error(f"Model {selected_model} not found in the models directory.")
           return
 
@@ -110,7 +118,7 @@ def inference(model=None):
           data_yaml = yaml.safe_load(f)
       class_names = data_yaml['names']
 
-  # st.success("Model loaded successfully!")
+#   st.success("Model loaded successfully!")
 
   # Multiselect box with class names and get indices of selected classes
   selected_classes = st.sidebar.multiselect("Classes", class_names, default=class_names)
@@ -119,9 +127,12 @@ def inference(model=None):
   if not isinstance(selected_ind, list):  # Ensure selected_ind is a list
       selected_ind = list(selected_ind)
 
-  enable_trk = st.sidebar.radio("Enable Tracking", ("Yes", "No"))
+  enable_trk = st.sidebar.radio("Enable Tracking", ("No", "Yes"))
   conf = float(st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.60, 0.01))
   iou = float(st.sidebar.slider("IoU Threshold", 0.0, 1.0, 0.45, 0.01))
+
+  # Speed control
+  speed_factor = st.sidebar.slider("Playback Speed", 0.1, 3.0, 1.0, 0.1)  # 0.1x to 3.0x speed
 
   col1, col2 = st.columns(2)
   org_frame = col1.empty()
@@ -144,6 +155,9 @@ def inference(model=None):
               st.warning("Failed to read frame from webcam/video.")
               break
 
+          # Resize frame to a suitable size
+          frame = cv2.resize(frame, (640, 480))  # Resize to 640x480 or any preferred size
+
           prev_time = time.time()
 
           # Store model predictions
@@ -151,6 +165,8 @@ def inference(model=None):
               results = model.track(frame, conf=conf, iou=iou, classes=selected_ind, persist=True)
           else:
               results = model(frame, conf=conf, iou=iou, classes=selected_ind)
+
+          # Annotate the frame (NMS is handled internally)
           annotated_frame = results[0].plot()  # Add annotations on frame
 
           # Calculate model FPS
@@ -158,7 +174,7 @@ def inference(model=None):
           fps = 1 / (curr_time - prev_time)
           prev_time = curr_time
 
-          # display frame
+          # Display frame
           org_frame.image(frame, channels="BGR")
           ann_frame.image(annotated_frame, channels="BGR")
 
@@ -169,6 +185,9 @@ def inference(model=None):
 
           # Display FPS in sidebar
           fps_display.metric("FPS", f"{fps:.2f}")
+
+          # Control playback speed
+          time.sleep(1 / (fps * speed_factor))  # Adjust sleep time based on speed factor
 
       # Release the capture
       videocapture.release()
