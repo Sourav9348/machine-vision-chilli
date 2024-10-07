@@ -110,7 +110,7 @@ def inference(model=None):
           data_yaml = yaml.safe_load(f)
       class_names = data_yaml['names']
 
-  st.success("Model loaded successfully!")
+  # st.success("Model loaded successfully!")
 
   # Multiselect box with class names and get indices of selected classes
   selected_classes = st.sidebar.multiselect("Classes", class_names, default=class_names)
