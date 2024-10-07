@@ -1,5 +1,6 @@
 streamlit>=1.29.0
 opencv-python
+opencv-python-headless
 torch
 ultralytics
 PyYAML
