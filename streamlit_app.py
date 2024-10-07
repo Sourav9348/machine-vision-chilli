@@ -8,31 +8,30 @@ import torch
 
 from ultralytics.utils.checks import check_requirements
 
-
 def inference(model=None):
   """Runs real-time object detection on video input using Ultralytics YOLOv8 in a Streamlit application."""
-  check_requirements("streamlit>=1.29.0")  # scope imports for faster ultralytics package load speeds
+  check_requirements("streamlit>=1.29.0")  # Ensure required Streamlit version
   import streamlit as st
 
   from ultralytics import YOLO
   import yaml  # Using standard yaml library
 
-  # Hide main menu style
+  # Hide main menu style (empty in this case)
   menu_style_cfg = """"""
 
-  # Main title of streamlit application
+  # Main title of Streamlit application
   main_title_cfg = """<div><h1 style="color:#FF64DA; text-align:center; font-size:40px; 
-                             font-family: 'Archivo', sans-serif; margin-top:-50px;margin-bottom:20px;">
-                    YOLO_Chilli Web Application
-                    </h1></div>"""
+                               font-family: 'Archivo', sans-serif; margin-top:-50px;margin-bottom:20px;">
+                      YOLO_Chilli Web Application
+                      </h1></div>"""
 
-  # Subtitle of streamlit application
+  # Subtitle of Streamlit application
   sub_title_cfg = """<div><h4 style="color:#042AFF; text-align:center; 
-                    font-family: 'Archivo', sans-serif; margin-top:-15px; margin-bottom:50px;">
-                    Experience real-time chilli leaf disease detection on your webcam or with video input. 🚀</h4>
-                    </div>"""
+                      font-family: 'Archivo', sans-serif; margin-top:-15px; margin-bottom:50px;">
+                      Experience real-time chilli leaf disease detection on your webcam or with video input. 🚀</h4>
+                      </div>"""
 
-  # Set html page configuration
+  # Set HTML page configuration
   st.set_page_config(page_title="IIT-KGP-AGFE", layout="wide", initial_sidebar_state="auto")
 
   # Append the custom HTML
@@ -40,7 +39,7 @@ def inference(model=None):
   st.markdown(main_title_cfg, unsafe_allow_html=True)
   st.markdown(sub_title_cfg, unsafe_allow_html=True)
 
-  # Add ultralytics logo in sidebar
+  # Add IIT KGP logo in sidebar
   with st.sidebar:
       logo = "https://www.iitkgp.ac.in/assets/pages/images/logo.png"
       st.image(logo, width=250)
@@ -74,7 +73,7 @@ def inference(model=None):
       if selected_video:
           vid_file_name = os.path.join(video_folder, selected_video)  # Full path to the selected video
   elif source == "webcam":
-      vid_file_name = 0
+      vid_file_name = 0  # 0 is the default webcam
 
   # Add dropdown menu for model selection
   model_dir = Path('models')
@@ -107,6 +106,13 @@ def inference(model=None):
 
       model = YOLO(str(model_path))  # Load the YOLO model
 
+      # Check for CUDA availability and move model to GPU if available
+      if torch.cuda.is_available():
+          model.to('cuda')
+          st.sidebar.success("Running on GPU")
+      else:
+          st.sidebar.warning("CUDA not available. Running on CPU, which may be slower.")
+
       # Load custom class names from data.yaml
       data_yaml_path = 'data.yaml'
       if not Path(data_yaml_path).exists():
@@ -117,8 +123,6 @@ def inference(model=None):
       with open(data_yaml_path, 'r') as f:
           data_yaml = yaml.safe_load(f)
       class_names = data_yaml['names']
-
-#   st.success("Model loaded successfully!")
 
   # Multiselect box with class names and get indices of selected classes
   selected_classes = st.sidebar.multiselect("Classes", class_names, default=class_names)
@@ -149,7 +153,15 @@ def inference(model=None):
 
       stop_button = st.button("Stop")  # Button to stop the inference
 
+      frame_count = 0
+      update_interval = 2  # Update UI every 2 frames to reduce overhead
+
+      # Define a desired FPS (frames per second)
+      desired_fps = 10  # You can adjust this value as needed
+
       while videocapture.isOpened():
+          prev_time = time.time()  # Start time for FPS calculation
+
           success, frame = videocapture.read()
           if not success:
               st.warning("Failed to read frame from webcam/video.")
@@ -157,8 +169,6 @@ def inference(model=None):
 
           # Resize frame to a suitable size
           frame = cv2.resize(frame, (640, 480))  # Resize to 640x480 or any preferred size
-
-          prev_time = time.time()
 
           # Store model predictions
           if enable_trk == "Yes":
@@ -169,35 +179,40 @@ def inference(model=None):
           # Annotate the frame (NMS is handled internally)
           annotated_frame = results[0].plot()  # Add annotations on frame
 
-          # Calculate model FPS
-          curr_time = time.time()
-          fps = 1 / (curr_time - prev_time)
-          prev_time = curr_time
+          # Calculate processing time
+          processing_time = time.time() - prev_time
 
-          # Display frame
-          org_frame.image(frame, channels="BGR")
-          ann_frame.image(annotated_frame, channels="BGR")
+          # Calculate FPS based on processing time
+          fps = 1 / processing_time if processing_time > 0 else 0
+
+          # Increment frame count
+          frame_count += 1
+
+          # Update frames in UI every 'update_interval' frames to reduce overhead
+          if frame_count % update_interval == 0:
+              # Display original frame and annotated frame
+              org_frame.image(frame, channels="BGR")
+              ann_frame.image(annotated_frame, channels="BGR")
 
           if stop_button:
               videocapture.release()  # Release the capture
               torch.cuda.empty_cache()  # Clear CUDA memory
-              st.stop()  # Stop streamlit app
+              st.stop()  # Stop Streamlit app
 
           # Display FPS in sidebar
           fps_display.metric("FPS", f"{fps:.2f}")
 
-          # Control playback speed
-          time.sleep(1 / (fps * speed_factor))  # Adjust sleep time based on speed factor
+          # Calculate time to sleep to maintain the desired FPS
+          sleep_time = max(1 / (desired_fps * speed_factor) - processing_time, 0)
+
+          # Sleep for the calculated time
+          time.sleep(sleep_time)
 
       # Release the capture
       videocapture.release()
 
   # Clear CUDA memory
   torch.cuda.empty_cache()
-
-  # Destroy window
-  # cv2.destroyAllWindows()
-
 
 # Main function call
 if __name__ == "__main__":
