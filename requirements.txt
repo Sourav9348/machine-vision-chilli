@@ -3,5 +3,3 @@ opencv-python
 torch
 ultralytics
 PyYAML
-libgl1-mesa-glx
-
